@@ -37,3 +37,7 @@ Thumbs.db
 
 # Reference Materials (as per user context)
 zygisk-module-sample/
+
+# Agent
+
+localtool/
