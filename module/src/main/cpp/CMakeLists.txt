@@ -19,7 +19,10 @@ add_subdirectory(${SHADOWHOOK_DIR} ${CMAKE_CURRENT_BINARY_DIR}/shadowhook)
 # ============================================
 add_library(${PROJECT_NAME} SHARED 
     main.cpp
-    hacks.cpp
+    hack_thread.cpp
+    hacks/mod_aim.cpp
+    hacks/mod_speed.cpp
+    hacks/mod_gunoffset.cpp
 )
 
 # 2. 核心 Flags

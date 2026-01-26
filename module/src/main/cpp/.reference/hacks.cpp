@@ -28,18 +28,70 @@ std::optional<std::string> getName(uintptr_t objAddr) {
      6. 读取 header 并解析 len = header >> 6
      7. 从 entry + 2 读取 len 个字符作为名称
   */
-  auto fNameId = readU32(objAddr + 0x18);
-  auto block = fNameId >> 16;
-  auto offset = fNameId & 0xFFFF;
-  auto fNamePool = g_GName + 0x30;
+  // ============================================================
+  // Step 1: 读取 FName Index (UObject 的 NamePrivate 成员)
+  // ============================================================
+  // UObject 结构:
+  //   +0x00: VTablePtr
+  //   +0x08: ObjectFlags (EObjectFlags)
+  //   +0x0C: InternalIndex (int32)
+  //   +0x10: ClassPrivate (UClass*)
+  //   +0x18: NamePrivate (FName)  <-- 我们要读的 FNameEntryId
+  // FName 的本质是一个 32-bit index，通过 FNamePool 解析成字符串
+  constexpr uintptr_t kUObject_NamePrivate_Offset = 0x18;
+  auto fNameId = readU32(objAddr + kUObject_NamePrivate_Offset);
 
-  auto chunk = readPtr(fNamePool + 0x10 + block * 8);
-  auto entry = chunk + 2 * offset;
+  // ============================================================
+  // Step 2: 从 FNameEntryId 中解析 Block 和 Offset
+  // ============================================================
+  // FNameEntryId 是一个压缩的 32-bit 索引:
+  //   - 高 16 位 (bits 16-31): Block Index  (FNamePool 中的 chunk 索引)
+  //   - 低 16 位 (bits  0-15): Entry Offset (chunk 内的偏移)
+  auto block = fNameId >> 16;     // 高 16 位: chunk 索引
+  auto offset = fNameId & 0xFFFF; // 低 16 位: chunk 内偏移
 
+  // ============================================================
+  // Step 3: 定位 FNamePool
+  // ============================================================
+  // GNames (FNamePool) 结构:
+  //   +0x00: Lock (FRWLock)
+  //   +0x08: CurrentBlock (uint32)
+  //   +0x0C: CurrentByteCursor (uint32)
+  //   +0x10: Entries[FNameMaxBlocks] (FNameEntry*[8192])  <-- 指针数组
+  // 但 GNames 全局变量指向的是 FNamePool 结构前 0x30 的位置
+  // 所以实际 Entries 的地址 = GNames + 0x30 + 0x10 = GNames + 0x40
+  constexpr uintptr_t kFNamePool_Entries_Offset = 0x10;
+  auto fNamePool = g_GName + 0x30; // 真正的 FNamePool 基址
+
+  // ============================================================
+  // Step 4: 读取 Chunk 指针并计算 Entry 地址
+  // ============================================================
+  // Entries 是一个指针数组，每个 chunk 大小 = 8 字节 (64-bit 指针)
+  // chunk = Entries[block]
+  auto chunk = readPtr(fNamePool + kFNamePool_Entries_Offset + block * 8);
+  // Entry 偏移使用 2-byte 对齐 (UE4 的 FNameEntry 编码)
+  // entry = chunk + (offset * sizeof(FNameEntryHeader))
+  // 这里的 stride=2 是 FNameEntry 头部的编码规则
+  constexpr uintptr_t kFNameEntry_Stride = 2;
+  auto entry = chunk + kFNameEntry_Stride * offset;
+
+  // ============================================================
+  // Step 5: 解析 FNameEntry Header 获取字符串长度
+  // ============================================================
+  // FNameEntry 结构 (压缩格式):
+  //   +0x00: Header (uint16)
+  //         - bits 0-5:  Flags (bIsWide, ProbeHashBits)
+  //         - bits 6-15: Len (字符串长度, 最大 1024 - 这里取低 10 位)
+  //   +0x02: Data[Len] (char* 或 wchar* 取决于 bIsWide)
+  constexpr uint16_t kFNameEntry_LenShift = 6; // 长度存储在高 10 位
   auto header = readU16(entry);
-  auto len = header >> 6;
+  auto len = header >> kFNameEntry_LenShift;
+
   if (len > 0 && len < 100) {
-    return std::string((char *)(entry + 2), len);
+    // Data 紧跟在 Header 之后 (offset +2)
+    constexpr uintptr_t kFNameEntry_Data_Offset = 2;
+    return std::string(
+        reinterpret_cast<char *>(entry + kFNameEntry_Data_Offset), len);
   }
 
   return std::nullopt;

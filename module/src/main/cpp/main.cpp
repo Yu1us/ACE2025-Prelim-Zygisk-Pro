@@ -7,8 +7,8 @@
 #include "zygisk.hpp"
 #include <string_view>
 
-// 声明 hack_thread (在 hacks.cpp 中实现)
-extern void hack_thread();
+// 声明 hack_thread
+#include "hack_thread.hpp"
 
 class MyModule : public zygisk::ModuleBase {
 public:
