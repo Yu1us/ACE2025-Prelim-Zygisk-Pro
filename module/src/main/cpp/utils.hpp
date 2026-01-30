@@ -17,7 +17,15 @@
 
 #define LOG_TAG "Zygisk_UE4_Aim"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+#ifdef NDEBUG
+#define LOGD(...)                                                              \
+  do {                                                                         \
+  } while (0)
+#else
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#endif
+
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // 回调结构体

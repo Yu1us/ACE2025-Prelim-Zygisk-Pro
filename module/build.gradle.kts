@@ -45,7 +45,7 @@ android {
 tasks.register<Zip>("packageZygisk") {
     dependsOn("assembleRelease")
     group = "magisk"
-    description = "Package Zygisk module" // Fixed 'desciption' typo
+    description = "Package Zygisk module (Release)"
 
     archiveFileName.set("HelloZygisk.zip")
     destinationDirectory.set(rootProject.layout.projectDirectory)
@@ -66,6 +66,34 @@ tasks.register<Zip>("packageZygisk") {
     }
     
     doLast {
-        println("Packed to ${archiveFile.get().asFile.absolutePath}")
+        println("Packed Release to ${archiveFile.get().asFile.absolutePath}")
+    }
+}
+
+tasks.register<Zip>("packageZygiskDebug") {
+    dependsOn("assembleDebug")
+    group = "magisk"
+    description = "Package Zygisk module (Debug)"
+
+    archiveFileName.set("HelloZygisk-Debug.zip")
+    destinationDirectory.set(rootProject.layout.projectDirectory)
+
+    from(file("module.prop"))
+    
+    into("zygisk") {
+        from(layout.buildDirectory.dir("intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/arm64-v8a")) {
+            include("libhellozygisk.so")
+            rename { "arm64-v8a.so" }
+        }
+    }
+
+    into("system/lib64") {
+        from(layout.buildDirectory.dir("intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/arm64-v8a")) {
+            include("libshadowhook_nothing.so")
+        }
+    }
+    
+    doLast {
+        println("Packed Debug to ${archiveFile.get().asFile.absolutePath}")
     }
 }

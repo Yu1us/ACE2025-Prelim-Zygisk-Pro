@@ -3,7 +3,6 @@
 #include "../utils.hpp"
 #include "mod_base.hpp"
 
-
 namespace Hacks {
 
 // ============================================================
@@ -76,7 +75,7 @@ public:
   void onActorFound(uintptr_t actor, std::string_view actorName) override {
     if (actorName.find("PlayerController") != std::string_view::npos) {
       g_PlayerController = actor;
-      LOGI("[%s] Found PlayerController @ %p", name().data(), (void *)actor);
+      LOGD("[%s] Found PlayerController @ %p", name().data(), (void *)actor);
     }
   }
 };
