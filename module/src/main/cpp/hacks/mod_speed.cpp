@@ -2,7 +2,6 @@
 #include "../utils.hpp"
 #include "mod_base.hpp"
 
-
 namespace Hacks {
 
 class ModSpeed : public IHackModule {
@@ -46,7 +45,20 @@ public:
 
     // YOUR CODE HERE
     auto movementComp = readPtr(actor + Game::Character_MovementComponent);
-    
+    if (movementComp == 0)
+      return;
+
+    auto oldSpeed = readFloat(movementComp + Game::Movement_MaxWalkSpeed);
+    auto oldAccel = readFloat(movementComp + Game::Movement_MaxAcceleration);
+
+    if (oldSpeed > Game::TARGET_SPEED + Game::SPEED_THRESHOLD ||
+        oldAccel > Game::TARGET_SPEED + Game::SPEED_THRESHOLD) {
+      writeFloat(movementComp + Game::Movement_MaxWalkSpeed,
+                 Game::TARGET_SPEED);
+      writeFloat(movementComp + Game::Movement_MaxAcceleration,
+                 Game::TARGET_SPEED);
+      LOGI("✅ Speed fixed: %.0f -> %.0f", oldSpeed, Game::TARGET_SPEED);
+    }
   }
 };
 

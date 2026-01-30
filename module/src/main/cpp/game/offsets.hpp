@@ -47,6 +47,7 @@ constexpr uintptr_t Controller_ControlRotation = 0x288;
 
 // ========== 游戏常量 ==========
 constexpr float TARGET_SPEED = 600.0f; // from solve_speed.js:17
+constexpr float SPEED_THRESHOLD = 100.0f;
 
 // ========== 简单结构 ==========
 struct Vector3 {
