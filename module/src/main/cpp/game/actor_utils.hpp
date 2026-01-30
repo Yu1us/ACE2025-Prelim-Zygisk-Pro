@@ -42,8 +42,23 @@ inline std::optional<std::string> getName(uintptr_t objAddr) {
      - FNameEntry_Stride = 2
      - FNameEntry_LenShift = 6
   */
+  auto fNameID = readU32(objAddr + UObject_NamePrivate);
 
-  return std::nullopt; // YOUR CODE HERE
+  auto block = fNameID >> 16;
+  auto offset = fNameID & 0xFFFF;
+
+  auto fNamePool = g_GName + FNamePool_BaseOffset;
+  auto chunk = readPtr(fNamePool + FNamePool_Entries_Offset + (block << 3));
+  if (chunk == 0) return std::nullopt;
+  auto entry = chunk + (offset * FNameEntry_Stride);
+
+  auto header = readU16(entry);
+  auto len = header >> FNameEntry_LenShift;
+  if (len > 0 && len < 100) {
+    return std::string(reinterpret_cast<char*>(entry + 2), len);
+  }
+
+  return std::nullopt;
 }
 
 // ============================================================
