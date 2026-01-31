@@ -6,12 +6,11 @@
 #include "utils.hpp"
 #include <vector>
 
-
 // ============================================================
 // 模块注册
 // ============================================================
 namespace Hacks {
-extern IHackModule *getModAim();
+extern IHackModule *getModProjectile();
 extern IHackModule *getModSpeed();
 extern IHackModule *getModGunOffset();
 } // namespace Hacks
@@ -19,7 +18,7 @@ extern IHackModule *getModGunOffset();
 static std::vector<Hacks::IHackModule *> g_modules;
 
 void initModules() {
-  g_modules.push_back(Hacks::getModAim());
+  g_modules.push_back(Hacks::getModProjectile());
   g_modules.push_back(Hacks::getModSpeed());
   g_modules.push_back(Hacks::getModGunOffset());
 

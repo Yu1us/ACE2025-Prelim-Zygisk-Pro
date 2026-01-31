@@ -64,9 +64,9 @@ void *HOOK_SpawnProjectile(void *thisPtr, void *projectileClass,
 // ============================================================
 // 模块类
 // ============================================================
-class ModAim : public IHackModule {
+class ModProjectile : public IHackModule {
 public:
-  std::string_view name() const override { return "Aimbot"; }
+  std::string_view name() const override { return "ProjectileFix"; }
 
   void onLibraryLoaded(uintptr_t base) override {
     uintptr_t targetAddr = base + Game::SpawnProjectile_Func_Offset;
@@ -93,7 +93,7 @@ public:
   }
 };
 
-static ModAim g_modAim;
-IHackModule *getModAim() { return &g_modAim; }
+static ModProjectile g_modProjectile;
+IHackModule *getModProjectile() { return &g_modProjectile; }
 
 } // namespace Hacks
