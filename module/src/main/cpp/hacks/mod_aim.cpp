@@ -16,8 +16,10 @@ static void *(*orig_SpawnProjectile)(void *, void *, void *, void *, void *,
 // ============================================================
 // Hook 回调
 // ============================================================
-void *HOOK_SpawnProjectile(void *thisPtr, void *arg1, void *arg2, void *arg3,
-                           void *arg4, void *arg5) {
+void *HOOK_SpawnProjectile(void *thisPtr, void *projectileClass,
+                           Game::FVector *spawnLocation,
+                           Game::FRotator *spawnRotation, void *owner,
+                           void *instigator) {
   /* 🛑 填空题: Aimbot Hook 逻辑
      参考: _reference/hacks.cpp.bak:110-131
 
@@ -40,10 +42,21 @@ void *HOOK_SpawnProjectile(void *thisPtr, void *arg1, void *arg2, void *arg3,
   */
 
   // YOUR CODE HERE
+  if (g_PlayerController && spawnLocation && spawnRotation) {
+    // spawnLocation->z += 10.0f;
+    // 起始位置还是有问题
+
+    auto ctrlRotPtr = reinterpret_cast<Game::FRotator *>(
+        g_PlayerController + Game::Controller_ControlRotation);
+    if (ctrlRotPtr) {
+      *spawnRotation = *ctrlRotPtr;
+    }
+  }
 
   // 调用原函数 (这部分不用改)
   if (orig_SpawnProjectile) {
-    return orig_SpawnProjectile(thisPtr, arg1, arg2, arg3, arg4, arg5);
+    return orig_SpawnProjectile(thisPtr, projectileClass, (void *)spawnLocation,
+                                (void *)spawnRotation, owner, instigator);
   }
   return nullptr;
 }
