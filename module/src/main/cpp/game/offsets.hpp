@@ -50,10 +50,10 @@ constexpr float TARGET_SPEED = 600.0f; // from solve_speed.js:17
 constexpr float SPEED_THRESHOLD = 100.0f;
 
 // ========== 简单结构 ==========
-struct Vector3 {
+struct FVector {
   float x, y, z;
 };
-struct Rotator {
+struct FRotator {
   float Pitch, Yaw, Roll;
 };
 

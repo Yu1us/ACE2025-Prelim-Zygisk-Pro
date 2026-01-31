@@ -2,7 +2,6 @@
 #include "../utils.hpp"
 #include "mod_base.hpp"
 
-
 namespace Hacks {
 
 class ModGunOffset : public IHackModule {
@@ -31,6 +30,12 @@ public:
     */
 
     // YOUR CODE HERE
+    auto *gunOffset =
+        reinterpret_cast<Game::FVector *>(actor + Game::Character_GunOffset);
+    if (gunOffset) {
+      *gunOffset = {0.0f, 0.0f, 10.0f};
+      LOGD("[%s] Fixed GunOffset @ %p", name().data(), (void *)actor);
+    }
   }
 };
 
