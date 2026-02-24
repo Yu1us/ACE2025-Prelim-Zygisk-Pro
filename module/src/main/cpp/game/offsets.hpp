@@ -57,4 +57,7 @@ struct FRotator {
   float Pitch, Yaw, Roll;
 };
 
+// Aimbot Patch Offset
+constexpr uintptr_t AimbotPatch = 0x670F3F8;
+
 } // namespace Game

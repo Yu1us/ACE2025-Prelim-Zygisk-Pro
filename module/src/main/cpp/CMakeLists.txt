@@ -17,12 +17,13 @@ add_subdirectory(${SHADOWHOOK_DIR} ${CMAKE_CURRENT_BINARY_DIR}/shadowhook)
 # ============================================
 # 主模块
 # ============================================
+# Auto-discover hack modules
+file(GLOB HACK_SOURCES "hacks/mod_*.cpp")
+
 add_library(${PROJECT_NAME} SHARED 
     main.cpp
     hack_thread.cpp
-    hacks/mod_projectile.cpp
-    hacks/mod_speed.cpp
-    hacks/mod_gunoffset.cpp
+    ${HACK_SOURCES}
 )
 
 # 2. 核心 Flags

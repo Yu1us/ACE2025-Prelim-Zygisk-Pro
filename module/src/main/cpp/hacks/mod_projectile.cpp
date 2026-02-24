@@ -2,6 +2,7 @@
 #include "../shadowhook_wrapper.hpp"
 #include "../utils.hpp"
 #include "mod_base.hpp"
+#include "registry.hpp"
 
 namespace Hacks {
 
@@ -93,7 +94,6 @@ public:
   }
 };
 
-static ModProjectile g_modProjectile;
-IHackModule *getModProjectile() { return &g_modProjectile; }
+REGISTER_HACK(ModProjectile)
 
 } // namespace Hacks

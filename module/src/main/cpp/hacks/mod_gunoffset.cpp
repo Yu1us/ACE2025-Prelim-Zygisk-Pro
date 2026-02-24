@@ -1,6 +1,7 @@
 #include "../game/offsets.hpp"
 #include "../utils.hpp"
 #include "mod_base.hpp"
+#include "registry.hpp"
 
 namespace Hacks {
 
@@ -39,7 +40,6 @@ public:
   }
 };
 
-static ModGunOffset g_modGunOffset;
-IHackModule *getModGunOffset() { return &g_modGunOffset; }
+REGISTER_HACK(ModGunOffset)
 
 } // namespace Hacks

@@ -9,18 +9,14 @@
 // ============================================================
 // 模块注册
 // ============================================================
-namespace Hacks {
-extern IHackModule *getModProjectile();
-extern IHackModule *getModSpeed();
-extern IHackModule *getModGunOffset();
-} // namespace Hacks
+// Hacks namespace declarations removed (using Registry)
+
+#include "hacks/registry.hpp"
 
 static std::vector<Hacks::IHackModule *> g_modules;
 
 void initModules() {
-  g_modules.push_back(Hacks::getModProjectile());
-  g_modules.push_back(Hacks::getModSpeed());
-  g_modules.push_back(Hacks::getModGunOffset());
+  g_modules = Hacks::ModuleRegistry::instance().getAll();
 
   LOGI("[Scheduler] Registered %zu modules", g_modules.size());
   for (auto *mod : g_modules) {

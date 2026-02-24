@@ -1,6 +1,7 @@
 #include "../game/offsets.hpp"
 #include "../utils.hpp"
 #include "mod_base.hpp"
+#include "registry.hpp"
 
 namespace Hacks {
 
@@ -62,8 +63,6 @@ public:
   }
 };
 
-// 全局实例
-static ModSpeed g_modSpeed;
-IHackModule *getModSpeed() { return &g_modSpeed; }
+REGISTER_HACK(ModSpeed)
 
 } // namespace Hacks

@@ -7,10 +7,12 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <sys/mman.h>
 #include <sys/uio.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
+
 
 // Start: 基础设施区域 (Green Zone)
 // 这里是通用的日志和工具函数，不需要你手写，直接使用即可。
@@ -117,6 +119,21 @@ template <MemReadable T> inline void writeMem(uintptr_t addr, const T &val) {
 inline void writeFloat(uintptr_t addr, float val) {
   writeMem<float>(addr, val);
 }
+
+// ============================================
+// Memory Protection Utilities
+// ============================================
+inline int set_memory_protection(void *addr, size_t size, int prot) {
+  uintptr_t page_size = sysconf(_SC_PAGESIZE);
+  uintptr_t page_start = reinterpret_cast<uintptr_t>(addr) & ~(page_size - 1);
+
+  return mprotect(reinterpret_cast<void *>(page_start),
+                  size + (reinterpret_cast<uintptr_t>(addr) - page_start),
+                  prot);
+}
+
+// ARM64 Instructions
+constexpr uint8_t ARM64_NOP[] = {0x1F, 0x20, 0x03, 0xD5};
 
 // ============================================
 // Span 遍历辅助 (Actor Array)
