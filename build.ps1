@@ -6,9 +6,14 @@
 $ErrorActionPreference = "Stop"
 
 # ========== Configuration ==========
-$ndkPath = "$env:LOCALAPPDATA\Android\Sdk\ndk\29.0.14206865"
-if (-not (Test-Path $ndkPath)) {
-    Write-Host "[ERROR] NDK not found at: $ndkPath" -ForegroundColor Red
+$ndkBase = "$env:LOCALAPPDATA\Android\Sdk\ndk"
+$ndkPath = ""
+if (Test-Path $ndkBase) {
+    $ndkPath = (Get-ChildItem -Path $ndkBase -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+}
+
+if (-not $ndkPath -or -not (Test-Path $ndkPath)) {
+    Write-Host "[ERROR] No NDK found in: $ndkBase" -ForegroundColor Red
     exit 1
 }
 
@@ -56,8 +61,8 @@ foreach ($abi in $abis) {
     $buildDir = Join-Path $buildRoot $abi
     
     # Clean previous build if needed (Optional: remove Force if too slow)
-    # if (Test-Path $buildDir) { Remove-Item -Recurse -Force $buildDir }
-
+    # Clean previous build if needed
+    if (Test-Path $buildDir) { Remove-Item -Recurse -Force $buildDir }
     # 1. Configure (Using -S and -B for out-of-source build)
     # We pass all arguments explicitly
     $configArgs = @(
@@ -67,8 +72,9 @@ foreach ($abi in $abis) {
         "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
         "-DANDROID_NDK=$ndkPath",
         "-DANDROID_ABI=$abi",
-        "-DANDROID_PLATFORM=android-35",
+        "-DANDROID_PLATFORM=android-27",
         "-DANDROID_STL=c++_static",
+        "-DPROJECT_ROOT=$projectDir",
         "-DCMAKE_BUILD_TYPE=Release"
     )
     

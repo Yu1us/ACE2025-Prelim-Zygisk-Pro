@@ -14,7 +14,9 @@ cmake-build-*/
 *.apk
 *.aar
 *.aab
-*.so
+
+# Generated Zygisk ABI artifacts
+module/zygisk/*.so
 
 # Setup specific
 local.properties
