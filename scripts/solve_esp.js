@@ -1,230 +1,325 @@
 /**
- * solve_esp.js — 透视修复 Frida 原型脚本
- * 
- * 作弊原理: 通过开启 Actor 的 bRenderCustomDepth + 后处理材质实现红色描边穿墙
- * 修复策略: 
- *   方案 A — Hook SetRenderCustomDepth，拦截 API 层调用，强制 bEnabled=false
- *   方案 B — 遍历所有 Actor，直写 bRenderCustomDepth=0 (兜底)
- * 
- * [Source: NotebookLM Writeup 交叉验证]
+ * solve_esp.js — 透视修复 Frida 脚本 v6
+ *
+ * 方案: LineTraceSingle 射线检测 + SetRenderInMainPass 动态开关渲染
+ *       (参赛选手验证有效的"曲线救国"方案)
+ *
+ * 原理:
+ *   每个 Tick: FirstPerson → ThirdPerson 发射射线
+ *     射线无碰撞(Distance==0) → 无遮挡 → SetRenderInMainPass(1) 显示敌人
+ *     射线有碰撞(Distance>0)  → 有遮挡 → SetRenderInMainPass(0) 隐藏敌人
+ *
+ * IDA 确认的偏移:
+ *   LineTraceSingle:     0x8D1AA78
+ *   SetRenderInMainPass: 0x8AB9E58 (comp+0x210 bit18)
+ *   RootComponent:       Actor+0x130
+ *   RelativeLocation:    RootComp+0x11C (float x,y,z)
+ *   Character → Mesh:    +0x280
  */
 
 "use strict";
 
-// ============================================================
-// 偏移量 (与 offsets.hpp 保持同步)
-// ============================================================
 const GWorld_Offset = 0xAFAC398;
 const GName_Offset = 0xADF07C0;
 const World_Level = 0x30;
 const Level_ActorsArray = 0x98;
-const UObject_NamePrivate = 0x18;
+const UObject_Name = 0x18;
+const UObject_Class = 0x10;
 
-// ESP 专用
-const Actor_RenderCustomDepth_Byte = 0x212;   // packed bitfield byte
-const RenderCustomDepth_BitIndex = 3;       // bit3
-const Character_SkeletalMeshComp = 0x280;   // Character -> SkeletalMeshComponent
+const Actor_RootComponent = 0x130;
+const RootComp_RelLoc = 0x11C;
+const Character_Mesh = 0x280;
 
-// 引擎函数
-const SetRenderCustomDepth_Offset = 0x8AB9DE8;
-const SetCustomDepthStencilValue_Offset = 0x8AB9E0C;
+const LineTraceSingle_Off = 0x8D1AA78;
+const SetRenderInMainPass_Off = 0x8AB9E58;
 
-// FName 解析常量
-const FNamePool_BaseOffset = 0x30;
-const FNamePool_Entries_Offset = 0x10;
+const FNamePool_Base = 0x30;
+const FNamePool_Entries = 0x10;
 const FNameEntry_Stride = 2;
 const FNameEntry_LenShift = 6;
 
 var moduleBase = null;
+var fpChar = null;   // FirstPersonCharacter
+var tpChar = null;   // ThirdPersonCharacter
+var tpMesh = null;   // ThirdPerson's MeshComponent
+
+var SetRenderInMainPassNF = null;
+var LineTraceSingleNF = null;
 
 // ============================================================
-// FName 解析 (复用 solve_speed.js 的逻辑)
+// Helpers
 // ============================================================
 function getFName(objAddr) {
     try {
         var gNames = moduleBase.add(GName_Offset);
-        var fNameId = objAddr.add(UObject_NamePrivate).readU32();
-
+        var fNameId = objAddr.add(UObject_Name).readU32();
         var block = fNameId >>> 16;
         var offset = fNameId & 0xFFFF;
-
-        var fNamePool = gNames.add(FNamePool_BaseOffset);
-        var chunk = fNamePool.add(FNamePool_Entries_Offset + block * 8).readPointer();
+        var chunk = gNames.add(FNamePool_Base).add(FNamePool_Entries + block * 8).readPointer();
         if (chunk.isNull()) return null;
-
         var entry = chunk.add(offset * FNameEntry_Stride);
         var header = entry.readU16();
         var len = header >>> FNameEntry_LenShift;
-
-        if (len > 0 && len < 100) {
-            return entry.add(2).readUtf8String(len);
-        }
+        if (len > 0 && len < 100) return entry.add(2).readUtf8String(len);
     } catch (e) { }
     return null;
 }
 
-// ============================================================
-// Actor 遍历器
-// ============================================================
 function forEachActor(callback) {
     try {
         var pGWorld = moduleBase.add(GWorld_Offset).readPointer();
         if (pGWorld.isNull()) return;
-
         var level = pGWorld.add(World_Level).readPointer();
         if (level.isNull()) return;
-
-        var actorArray = level.add(Level_ActorsArray).readPointer();
-        var actorCount = level.add(Level_ActorsArray + 0x8).readU32();
-
-        for (var i = 0; i < actorCount; i++) {
-            var actor = actorArray.add(i * Process.pointerSize).readPointer();
-            if (actor.isNull()) continue;
-
-            var name = getFName(actor);
-            callback(actor, name);
+        var arr = level.add(Level_ActorsArray).readPointer();
+        var cnt = level.add(Level_ActorsArray + 0x8).readU32();
+        for (var i = 0; i < cnt; i++) {
+            var actor = arr.add(i * Process.pointerSize).readPointer();
+            if (!actor.isNull()) callback(actor);
         }
+    } catch (e) { }
+}
+
+function getActorLocation(actor) {
+    try {
+        var rootComp = actor.add(Actor_RootComponent).readPointer();
+        if (rootComp.isNull()) return null;
+        var loc = rootComp.add(RootComp_RelLoc);
+        return {
+            x: loc.readFloat(),
+            y: loc.add(4).readFloat(),
+            z: loc.add(8).readFloat()
+        };
+    } catch (e) { return null; }
+}
+
+// ============================================================
+// Actor 查找
+// ============================================================
+function findCharacters() {
+    fpChar = null;
+    tpChar = null;
+    tpMesh = null;
+
+    forEachActor(function (actor) {
+        var name = getFName(actor);
+        if (!name) return;
+        if (name.indexOf("FirstPerson") !== -1 && name.indexOf("Character") !== -1) {
+            fpChar = actor;
+            console.log("[*] FirstPerson @ " + actor);
+        }
+        if (name.indexOf("ThirdPerson") !== -1) {
+            tpChar = actor;
+            try {
+                tpMesh = actor.add(Character_Mesh).readPointer();
+            } catch (e) { }
+            console.log("[*] ThirdPerson @ " + actor + " mesh=" + tpMesh);
+        }
+    });
+
+    if (fpChar && tpChar) {
+        var fpLoc = getActorLocation(fpChar);
+        var tpLoc = getActorLocation(tpChar);
+        console.log("[*] FP位置: " + JSON.stringify(fpLoc));
+        console.log("[*] TP位置: " + JSON.stringify(tpLoc));
+        return true;
+    }
+    console.log("[-] 未找到角色");
+    return false;
+}
+
+// ============================================================
+// 核心: 射线检测判断遮挡
+// ============================================================
+function checkOcclusion() {
+    if (!fpChar || !tpChar) return false;
+
+    var fpLoc = getActorLocation(fpChar);
+    var tpLoc = getActorLocation(tpChar);
+    if (!fpLoc || !tpLoc) return false;
+
+    // 分配 HitResult (足够大的空间)
+    var hitResult = Memory.alloc(0x200);
+    Memory.patchCode(hitResult, 0x200, function (code) {
+        // 清零
+    });
+    hitResult.writeByteArray(new Array(0x200).fill(0));
+
+    // 调用 LineTraceSingle
+    // IDA 签名: sub_8D1AA78(
+    //   __int64 a1,         // WorldContextObject (Actor)
+    //   unsigned int a2,    // TraceChannel
+    //   char a3,            // bTraceComplex
+    //   __int64 a4,         // FHitResult* (will be constructed internally? need to check)
+    //   float a5 (s0),      // Start.X
+    //   float a6 (s1),      // Start.Y  
+    //   float a7 (s2),      // Start.Z
+    //   float a8 (s3),      // End.X
+    //   float a9 (s4),      // End.Y
+    //   float a10 (s5),     // End.Z
+    //   __int64 a11,        // ActorsToIgnore array (ptr)
+    //   __int64 a12,        // HitResult out (ptr)
+    //   char a13            // bIgnoreSelf
+    // )
+
+    try {
+        var result = LineTraceSingleNF(
+            fpChar,                // WorldContextObject
+            1,                      // TraceChannel = Visibility
+            0,                      // bTraceComplex = false
+            ptr(0),                 // Ignored param
+            fpLoc.x, fpLoc.y, fpLoc.z,   // Start
+            tpLoc.x, tpLoc.y, tpLoc.z,   // End
+            ptr(0),                 // ActorsToIgnore
+            hitResult,              // HitResult
+            1                       // bIgnoreSelf
+        );
+
+        // HitResult+0x8 = Distance
+        var distance = hitResult.add(0x8).readFloat();
+        return { hit: result, distance: distance };
     } catch (e) {
-        console.log("[-] forEachActor error: " + e);
+        console.log("[-] LineTrace error: " + e);
+        return null;
     }
 }
 
 // ============================================================
-// 方案 A  —  Hook SetRenderCustomDepth
-// 拦截引擎 API，强制 bEnabled = false
+// ESP 修复 tick 函数
 // ============================================================
-function hookSetRenderCustomDepth() {
-    var funcAddr = moduleBase.add(SetRenderCustomDepth_Offset);
-    console.log("[*] Hooking SetRenderCustomDepth at " + funcAddr);
+var lastState = -1;  // -1=unknown, 0=hidden, 1=visible
 
-    // void SetRenderCustomDepth(UPrimitiveComponent* this, bool bNewValue)
-    Interceptor.attach(funcAddr, {
-        onEnter: function (args) {
-            var bNewValue = args[1].toInt32();
-            if (bNewValue !== 0) {
-                // 强制关闭 CustomDepth
-                args[1] = ptr(0);
-                console.log("[✅ Hook] SetRenderCustomDepth intercepted, forced false");
-            }
+function espTickFix() {
+    if (!tpMesh || tpMesh.isNull()) return;
+
+    var result = checkOcclusion();
+    if (!result) return;
+
+    if (result.distance === 0 || !result.hit) {
+        // 无遮挡 → 应该能正常看到 → 显示
+        if (lastState !== 1) {
+            SetRenderInMainPassNF(tpMesh, 1);
+            lastState = 1;
         }
-    });
+    } else {
+        // 有遮挡 → 不应该看到 → 隐藏
+        if (lastState !== 0) {
+            SetRenderInMainPassNF(tpMesh, 0);
+            lastState = 0;
+        }
+    }
 }
 
 // ============================================================
-// 方案 B  —  遍历所有 Actor，直写 bRenderCustomDepth = 0
-// 用作兜底，对抗直接内存修改
-// ============================================================
-function clearCustomDepthAllActors() {
-    var fixedCount = 0;
-
-    forEachActor(function (actor, name) {
-        try {
-            var byteAddr = actor.add(Actor_RenderCustomDepth_Byte);
-            var byteVal = byteAddr.readU8();
-            var bitSet = (byteVal >>> RenderCustomDepth_BitIndex) & 1;
-
-            if (bitSet === 1) {
-                // 清除 bit3
-                var newVal = byteVal & ~(1 << RenderCustomDepth_BitIndex);
-                byteAddr.writeU8(newVal);
-                fixedCount++;
-
-                if (name) {
-                    console.log("[✅ Clean] " + name + " bRenderCustomDepth cleared");
-                }
-            }
-        } catch (e) { }
-    });
-
-    return fixedCount;
-}
-
-// ============================================================
-// 诊断: 扫描哪些 Actor 被开启了 CustomDepth
-// ============================================================
-function scanCustomDepthActors() {
-    console.log("\n========== CustomDepth 扫描 ==========");
-    var found = 0;
-
-    forEachActor(function (actor, name) {
-        try {
-            var byteVal = actor.add(Actor_RenderCustomDepth_Byte).readU8();
-            var bitSet = (byteVal >>> RenderCustomDepth_BitIndex) & 1;
-
-            if (bitSet === 1) {
-                found++;
-                console.log("[!] " + (name || "Unknown") + " @ " + actor +
-                    "  byte=0x" + byteVal.toString(16) +
-                    "  bRenderCustomDepth=ON");
-            }
-        } catch (e) { }
-    });
-
-    console.log("[*] 扫描完成，发现 " + found + " 个 Actor 开启了 CustomDepth");
-    console.log("=====================================\n");
-}
-
-// ============================================================
-// 主入口
+// Main
 // ============================================================
 function main() {
     console.log("============================================");
-    console.log("[*] solve_esp.js — ESP 透视修复脚本");
+    console.log("[*] solve_esp.js v6 — 射线检测修复透视");
+    console.log("[*] LineTrace + SetRenderInMainPass");
     console.log("============================================");
 
-    // 等待 libUE4.so
     var mod = Process.findModuleByName("libUE4.so");
     if (!mod) {
-        console.log("[*] 等待 libUE4.so 加载...");
-        var timer = setInterval(function () {
+        var t = setInterval(function () {
             mod = Process.findModuleByName("libUE4.so");
-            if (mod) {
-                clearInterval(timer);
-                moduleBase = mod.base;
-                console.log("[*] libUE4.so base = " + moduleBase);
-                onModuleReady();
-            }
+            if (mod) { clearInterval(t); moduleBase = mod.base; onReady(); }
         }, 500);
     } else {
         moduleBase = mod.base;
-        console.log("[*] libUE4.so base = " + moduleBase);
-        onModuleReady();
+        onReady();
     }
 }
 
-function onModuleReady() {
-    // 方案 A: 安装 Hook (一次性)
-    hookSetRenderCustomDepth();
+function onReady() {
+    console.log("[*] base = " + moduleBase);
 
-    // 等 GWorld 就绪后启动方案 B 循环
-    console.log("[*] 等待 GWorld...");
-    var gwTimer = setInterval(function () {
+    // 初始化 NativeFunction
+    // LineTraceSingle: bool(ptr, uint, char, ptr, float*6, ptr, ptr, char)
+    LineTraceSingleNF = new NativeFunction(
+        moduleBase.add(LineTraceSingle_Off),
+        'bool',
+        ['pointer', 'uint32', 'uint8', 'pointer',
+            'float', 'float', 'float',
+            'float', 'float', 'float',
+            'pointer', 'pointer', 'uint8']
+    );
+
+    SetRenderInMainPassNF = new NativeFunction(
+        moduleBase.add(SetRenderInMainPass_Off),
+        'void', ['pointer', 'int']
+    );
+
+    console.log("[*] NativeFunction 初始化完成");
+
+    // 等 GWorld
+    var gw = setInterval(function () {
         try {
-            var pGWorld = moduleBase.add(GWorld_Offset).readPointer();
-            if (!pGWorld.isNull()) {
-                clearInterval(gwTimer);
-                console.log("[*] GWorld ready: " + pGWorld);
+            var p = moduleBase.add(GWorld_Offset).readPointer();
+            if (!p.isNull()) {
+                clearInterval(gw);
+                console.log("[*] GWorld = " + p);
 
-                // 先做一次诊断扫描
-                scanCustomDepthActors();
-
-                // 方案 B: 定时遍历清零 (每 2 秒)
-                console.log("[*] 启动方案 B 定时清理 (2s interval)...");
-                setInterval(function () {
-                    var n = clearCustomDepthAllActors();
-                    if (n > 0) {
-                        console.log("[*] 本轮修复了 " + n + " 个 Actor");
+                setTimeout(function () {
+                    if (!findCharacters()) {
+                        console.log("[-] 未找到角色，5秒后重试...");
+                        setTimeout(function () { findCharacters(); startTick(); }, 5000);
+                    } else {
+                        startTick();
                     }
-                }, 2000);
+                }, 5000);
             }
         } catch (e) { }
     }, 1000);
 }
 
-// RPC 导出，方便手动触发
+function startTick() {
+    if (!fpChar || !tpChar || !tpMesh) {
+        console.log("[-] 无法启动修复: 角色未找到");
+        return;
+    }
+
+    console.log("[*] 启动 ESP 修复 tick (100ms)...");
+    console.log("[*] 如射线检测崩溃，改用 setInterval + SetRenderInMainPass(0)");
+
+    // 先直接测试一次射线
+    var testResult = checkOcclusion();
+    if (testResult) {
+        console.log("[*] 射线测试: hit=" + testResult.hit + " distance=" + testResult.distance);
+    } else {
+        console.log("[!] 射线检测失败，回退到简单方案: 直接 SetRenderInMainPass(0)");
+        SetRenderInMainPassNF(tpMesh, 0);
+        console.log("[✅] 直接隐藏了 ThirdPerson (无射线检测)");
+        console.log("[*] 手动调用 rpc.exports.show() 可恢复");
+        return;
+    }
+
+    // 启动定时修复
+    setInterval(espTickFix, 100);
+    console.log("[✅] ESP 修复已激活!");
+}
+
 rpc.exports = {
-    scan: function () { scanCustomDepthActors(); },
-    fix: function () { return clearCustomDepthAllActors(); }
+    find: function () { findCharacters(); },
+    check: function () {
+        var r = checkOcclusion();
+        console.log(JSON.stringify(r));
+        return r;
+    },
+    hide: function () {
+        if (tpMesh) {
+            SetRenderInMainPassNF(tpMesh, 0);
+            lastState = 0;
+            console.log("Hidden");
+        }
+    },
+    show: function () {
+        if (tpMesh) {
+            SetRenderInMainPassNF(tpMesh, 1);
+            lastState = 1;
+            console.log("Shown");
+        }
+    }
 };
 
 main();
