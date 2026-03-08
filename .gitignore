@@ -27,7 +27,6 @@ local.properties
 *.iml
 *.swp
 *.zip
-HelloZygisk.zip
 
 # Logs
 *.log
@@ -41,5 +40,6 @@ Thumbs.db
 zygisk-module-sample/
 
 # Agent
+.chat/
 
 localtool/
