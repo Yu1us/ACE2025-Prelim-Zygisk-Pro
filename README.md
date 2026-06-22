@@ -1,36 +1,67 @@
 # ACE2025-Prelim-Zygisk
 
-2025 腾讯游戏安全竞赛安卓初赛复现
+Reproduction of Tencent Game Security Competition 2025 Android Preliminary Round
 
-## 环境
+## Overview
 
-JDK 17
-NDK 26
-Gradle 8.6
+This project implements a Zygisk-based module for analyzing and modifying UE4 game logic as part of the ACE2025 security competition. The competition involves identifying and fixing various game modifications in a controlled environment.
 
-## 编译
+## Features
+
+- **Modular Architecture**: Extensible module system with auto-registration
+- **Modern C++20**: Type-safe memory operations with `std::optional` and `std::span`
+- **Multiple Fix Modules**:
+  - `mod_aim.cpp`: Aimbot patch using NOP instruction
+  - `mod_speed.cpp`: Movement speed correction
+  - `mod_gunoffset.cpp`: Gun offset adjustments
+  - `mod_projectile.cpp`: Projectile spawn rotation correction
+
+## Environment
+
+- JDK 17
+- NDK 26
+- Gradle 8.6
+
+## Build
 
 **Android Studio**
-直接运行 `packageZygisk` 任务
+Run the `packageZygisk` task directly
 
-**命令行**
+**Command Line**
 ```shell
 ./gradlew :module:packageZygisk
 ```
 
-产物 `HelloZygisk.zip` 生成于项目根目录
+The artifact `HelloZygisk.zip` will be generated in the project root directory.
 
-## 技术要点
+## Technical Highlights
 
-**内存基址**
-使用 `dl_iterate_phdr` 获取 `libUE4.so` 信息
+**Memory Base Address**
+Uses `dl_iterate_phdr` to retrieve `libUE4.so` information
 
-**Hook 时机**
-`postAppSpecialize` 阶段执行
+**Hook Timing**
+Executes during the `postAppSpecialize` phase
 
-**稳定性**
-JNI 指针检查
+**Stability**
+JNI pointer validation
 
-## 声明
+**Architecture**
+- Module registry pattern with `REGISTER_HACK` macro
+- Separation of concerns: game offsets, utils, and hack modules
+- ShadowHook integration for reliable inline hooking
 
-仅供安全研究
+## Documentation
+
+The `docs/` directory contains technical write-ups covering:
+- UE4 FName parsing internals
+- Offset analysis methodology
+- Architecture refactoring notes
+- Speed/aim/projectile fix implementations
+
+## Disclaimer
+
+This project is for **security research and educational purposes only**. It was developed as part of the ACE2025 competition, which uses a controlled test environment separate from any production games.
+
+## License
+
+This project is provided as-is for educational purposes.
