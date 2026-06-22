@@ -1,67 +1,66 @@
 # ACE2025-Prelim-Zygisk
 
-Reproduction of Tencent Game Security Competition 2025 Android Preliminary Round
+腾讯游戏安全竞赛 2025 安卓初赛复现
 
-## Overview
+## 项目简介
 
-This project implements a Zygisk-based module for analyzing and modifying UE4 game logic as part of the ACE2025 security competition. The competition involves identifying and fixing various game modifications in a controlled environment.
+ACE2025 安全竞赛的 Zygisk 模块，用于分析和修改 UE4 游戏逻辑。比赛要求在测试环境中定位并修复游戏中的作弊功能。
 
-## Features
+## 功能模块
 
-- **Modular Architecture**: Extensible module system with auto-registration
-- **Modern C++20**: Type-safe memory operations with `std::optional` and `std::span`
-- **Multiple Fix Modules**:
-  - `mod_aim.cpp`: Aimbot patch using NOP instruction
-  - `mod_speed.cpp`: Movement speed correction
-  - `mod_gunoffset.cpp`: Gun offset adjustments
-  - `mod_projectile.cpp`: Projectile spawn rotation correction
+- `mod_aim.cpp` - 自瞄修复（NOP 指令 patch）
+- `mod_speed.cpp` - 移速修正
+- `mod_gunoffset.cpp` - 枪械偏移调整
+- `mod_projectile.cpp` - 弹道修正
 
-## Environment
+模块自动注册，C++20 实现，用 `std::optional` 和 `std::span` 保证类型安全。
+
+## 环境要求
 
 - JDK 17
 - NDK 26
 - Gradle 8.6
 
-## Build
+## 编译
 
 **Android Studio**
-Run the `packageZygisk` task directly
+直接运行 `packageZygisk` 任务
 
-**Command Line**
+**命令行**
 ```shell
 ./gradlew :module:packageZygisk
 ```
 
-The artifact `HelloZygisk.zip` will be generated in the project root directory.
+产物 `HelloZygisk.zip` 生成在项目根目录。
 
-## Technical Highlights
+## 技术要点
 
-**Memory Base Address**
-Uses `dl_iterate_phdr` to retrieve `libUE4.so` information
+**基址获取**
+用 `dl_iterate_phdr` 读取 `libUE4.so` 信息
 
-**Hook Timing**
-Executes during the `postAppSpecialize` phase
+**Hook 时机**
+在 `postAppSpecialize` 阶段执行
 
-**Stability**
-JNI pointer validation
+**稳定性**
+JNI 指针检查
 
-**Architecture**
-- Module registry pattern with `REGISTER_HACK` macro
-- Separation of concerns: game offsets, utils, and hack modules
-- ShadowHook integration for reliable inline hooking
+**架构设计**
+- `REGISTER_HACK` 宏实现模块注册
+- 分离 game offsets、utils、hack modules
+- ShadowHook 做 inline hooking
 
-## Documentation
+## 技术文档
 
-The `docs/` directory contains technical write-ups covering:
-- UE4 FName parsing internals
-- Offset analysis methodology
-- Architecture refactoring notes
-- Speed/aim/projectile fix implementations
+`docs/` 目录包含：
+- UE4 FName 解析原理
+- 偏移量分析方法
+- 架构重构笔记
+- 移速/自瞄/弹道修复实现
 
-## Disclaimer
+## 声明
 
-This project is for **security research and educational purposes only**. It was developed as part of the ACE2025 competition, which uses a controlled test environment separate from any production games.
+仅用于安全研究和教学。本项目基于 ACE2025 竞赛开发，使用测试环境，与任何生产游戏无关。
 
-## License
+## 许可
 
-This project is provided as-is for educational purposes.
+MIT License
