@@ -8,14 +8,12 @@
 
 ## 0. 版本与背景
 
-> [!IMPORTANT]
-> **UE4 版本**: 4.27 (ARM64)
-> 
-> 在 **UE4.23+** 中，`GNames` 不再是简单的 `TArray<FNameEntry*>`，而是 **FNamePool** 池化分配器。
-> 这意味着你需要理解 Block/Chunk 结构才能正确解析 FName。
+**UE4 版本**: 4.27 (ARM64)
 
-### 如何定位 GNames？
-**方法**: 在 IDA 中搜索 `"ByteProperty"` 字符串的引用，它指向 `FNamePool` 构造函数。
+UE4.23+ 中，`GNames` 从 `TArray<FNameEntry*>` 改为 `FNamePool` 池化分配器。解析 FName 需要理解 Block/Chunk 结构。
+
+### 定位 GNames
+在 IDA 中搜索 `"ByteProperty"` 字符串引用，指向 `FNamePool` 构造函数。
 
 **本次比赛的 Offset**:
 ```
@@ -31,14 +29,14 @@ GNames Offset = 0xADF07C0  (libUE4.so 内偏移)
 - 每个 UObject 都有一个 `NamePrivate` 成员，类型是 `FName`。
 - **核心思想**: 字符串只存储一次，对象仅保存 **32-bit 索引**，通过全局 `FNamePool` 解析成字符串。
 
-### 1.2 为什么需要解析 FName?
-在游戏安全/外挂开发中，我们需要：
-1. **识别 Actor 类型** (通过名称判断是 `PlayerController` 还是 `FirstPersonCharacter`)
-2. **动态定位对象** (无法硬编码所有 Actor 地址)
+### 1.2 为什么解析 FName
+游戏安全开发需要：
+1. 识别 Actor 类型（判断是 `PlayerController` 还是 `FirstPersonCharacter`）
+2. 动态定位对象（不能硬编码所有 Actor 地址）
 
-### 1.3 UE4 类继承结构 (重要!)
+### 1.3 UE4 类继承结构
 
-理解继承链有助于知道哪些偏移来自哪个父类:
+继承链决定偏移来源:
 
 ```
 UObject                  ← Base (contains NamePrivate @ 0x18)
@@ -85,7 +83,7 @@ auto offset = fNameId & 0xFFFF;   // 低 16 位
 
 ### 2.3 FNamePool (GNames) 结构
 
-`GNames` 是一个全局指针，指向 `FNamePool` 的 **前 0x30 字节的位置**（历史原因）。
+`GNames` 全局指针指向 `FNamePool - 0x30`（历史原因）。
 
 ```
 GNames (全局变量)
@@ -151,37 +149,25 @@ auto name = std::string((char*)(entry + 2), len);
 
 ---
 
-## 4. Interview Prep (面试问题)
+## 4. 常见问题
 
-### Q1: 为什么 UE4 使用 FName 而不是直接存 `std::string`?
-**A**: 性能优化。
-- **内存**: 相同名称只存一份，对象仅存 32-bit 索引。
-- **比较**: 字符串比较变成整数比较 (O(1) vs O(n))。
-- **线程安全**: FNamePool 有内置锁。
+**Q1: 为什么 UE4 使用 FName 而不是 `std::string`?**
+性能优化 - 相同名称只存一份，对象只存 32-bit 索引。字符串比较变成整数比较 (O(1) vs O(n))。FNamePool 有内置锁保证线程安全。
 
-### Q2: 为什么 GNames 要加 0x30?
-**A**: UE4 历史兼容性设计。在 UE4.23+ 中从 `TArray` 改成 `FNamePool`，但保留了偏移以兼容旧代码和工具链。
+**Q2: 为什么 GNames 要加 0x30?**
+UE4.23+ 从 `TArray` 改成 `FNamePool`，保留偏移兼容旧代码和工具链。
 
-### Q3: Entry 的 stride 为什么是 2?
-**A**: FNameEntry 使用压缩编码。Header 是 2 字节，每个 Entry 以 2-byte 对齐。这是 UE4 的内部优化决策。
+**Q3: Entry 的 stride 为什么是 2?**
+FNameEntry 压缩编码。Header 2 字节，Entry 以 2-byte 对齐。
 
-### Q4: 如何防止 getName() 导致的崩溃?
-**A**: 
-1. 检查 `objAddr` 和 `g_GName` 非零
-2. 使用安全读取函数 (`readU32`, `readPtr`) 而非直接解引用
-3. 限制 `len < 100` 防止内存越界
+**Q4: 如何防止 getName() 崩溃?**
+检查 `objAddr` 和 `g_GName` 非零，用安全读取函数 (`readU32`, `readPtr`) 不直接解引用，限制 `len < 100` 防内存越界。
 
-### Q5: Header 的 `bIsWide` 标志位有什么用?
-**A**: 
-- `bIsWide = Header & 1`
-- 如果为 1，字符串存储为 `wchar_t` (UTF-16)，需要用 `readUtf16String()` 解析
-- 一般用于非 ASCII 字符 (如日文/中文资源名)
+**Q5: Header 的 `bIsWide` 标志位?**
+`bIsWide = Header & 1`。为 1 时字符串存储为 `wchar_t` (UTF-16)，用 `readUtf16String()` 解析。用于非 ASCII 字符（日文/中文资源名）。
 
-### Q6: 如何找到 GNames 的偏移量?
-**A**: 搜索 `"ByteProperty"` 字符串的 XREF，它会引用 FNamePool 构造函数：
-```
-IDA: Shift+F12 → "ByteProperty" → X (XREF) → 跟踪到 FNamePool 初始化
-```
+**Q6: 如何找到 GNames 偏移量?**
+搜索 `"ByteProperty"` 字符串 XREF，引用 FNamePool 构造函数。IDA: Shift+F12 → "ByteProperty" → X → 跟踪到 FNamePool 初始化。
 
 ---
 
@@ -215,10 +201,9 @@ std::optional<std::string> getName(uintptr_t objAddr) {
 }
 ```
 
-### 5.2 Frida 参考实现 (来自 Writeups)
+### 5.2 Frida 参考实现
 
-> [!TIP]
-> 这是 NotebookLM 从比赛 Writeups 中提取的参考实现，用于 Frida 原型验证。
+从比赛 Writeups 提取，用于原型验证:
 
 ```javascript
 var GName_Offset = 0xADF07C0;
@@ -258,7 +243,7 @@ function getFNameFromID(fNameId) {
 
 ---
 
-## 6. 关键差异: UE4.23+ vs 旧版本
+## 6. UE4.23+ vs 旧版本
 
 | 特性 | UE4.22 及以下 | UE4.23+ |
 | :--- | :--- | :--- |
@@ -267,5 +252,4 @@ function getFNameFromID(fNameId) {
 | **Entry 地址计算** | `GNames[index]` | `Blocks[block] + stride * offset` |
 | **需要偏移调整** | 否 | 是 (`+0x30`, `+0x10`) |
 
-> [!WARNING]
-> 如果你用 UE4.22 的方法去解析 4.27，会得到错误的字符串或崩溃！
+用 UE4.22 方法解析 4.27 会得到错误字符串或崩溃。

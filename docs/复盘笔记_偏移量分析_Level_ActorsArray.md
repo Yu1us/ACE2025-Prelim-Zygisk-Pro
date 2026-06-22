@@ -1,17 +1,12 @@
----
-date_created: 2026-01-24 15:42
-date_modified: 2026-01-24 19:05
----
 # 偏移量分析：Level_ActorsArray (0x98)
 
-> **核心问题**: `constexpr uintptr_t Level_ActorsArray = 0x98;` 是怎么找到的？
+**核心问题**: `constexpr uintptr_t Level_ActorsArray = 0x98;` 怎么找到的？
 
-> [!NOTE]
-> **Writeup 来源** (存储于 NotebookLM)
-> - [2024腾讯游戏安全安卓初赛复现](https://izayoishiki.github.io/2025/02/01/2024腾讯游戏安全安卓初赛复现/)
-> - [2025 腾讯游戏安全技术竞赛 安卓初赛](https://lrhtony.cn/2025/03/29/2025TencentGame/)
-> - [2025腾讯游戏安全安卓赛道初赛wp](https://jz5p.github.io/2025/03/28/2025腾讯游戏安全安卓赛道初赛wp/)
-> - [52pojie 论坛帖子](https://www.52pojie.cn/thread-2024227-1-1.html)
+**Writeup 来源**:
+- [2024腾讯游戏安全安卓初赛复现](https://izayoishiki.github.io/2025/02/01/2024腾讯游戏安全安卓初赛复现/)
+- [2025 腾讯游戏安全技术竞赛 安卓初赛](https://lrhtony.cn/2025/03/29/2025TencentGame/)
+- [2025腾讯游戏安全安卓赛道初赛wp](https://jz5p.github.io/2025/03/28/2025腾讯游戏安全安卓赛道初赛wp/)
+- [52pojie 论坛帖子](https://www.52pojie.cn/thread-2024227-1-1.html)
 
 ---
 
@@ -39,7 +34,7 @@ grep "World" SDK.txt             # ❌ 无结果
 grep "Class: Actor" SDK.txt      # ✅ 有结果，在第 200 行
 ```
 
-**结论**: UE4Dumper 只 dump 了通过反射系统注册的 UClass，而 `UWorld` 和 `ULevel` 的成员变量没有完整暴露给蓝图系统
+UE4Dumper 只 dump 通过反射系统注册的 UClass，`UWorld` 和 `ULevel` 成员变量没有完整暴露给蓝图系统。
 
 ---
 
@@ -47,9 +42,9 @@ grep "Class: Actor" SDK.txt      # ✅ 有结果，在第 200 行
 
 ### 2.1 三种获取途径
 
-1. **UE4 源码** (Epic Games Access)：直接查看 `ULevel` 类定义
-2. **游戏逆向**: 通过 IDA 分析 `GetActors()` 等函数
-3. **社区 Writeup**: ACE2025 比赛 Writeup 直接给出
+1. **UE4 源码** (Epic Games Access) - 查看 `ULevel` 类定义
+2. **游戏逆向** - IDA 分析 `GetActors()` 等函数
+3. **社区 Writeup** - ACE2025 比赛 Writeup 直接给出
 
 ### 2.2 指针链结构
 
@@ -74,7 +69,7 @@ GWorld (libUE4.so + 0xAFAC398)
 
 ### 3.0 关于截图中的代码
 
-截图中的 switch/case 表是 UE4 反射系统的 **FName 字符串映射表**，不是游戏逻辑
+截图中 switch/case 表是 UE4 反射系统的 FName 字符串映射表，不是游戏逻辑。
 
 ```asm
 loc_6A21564:              ; jumptable case 216
@@ -86,7 +81,7 @@ loc_6A21570:              ; jumptable case 217
   RET
 ```
 
-这只是返回属性名字符串的函数，类似于 `GetPropertyName(index)`，用于序列化和调试，没有偏移量信息
+返回属性名字符串的函数，类似 `GetPropertyName(index)`，用于序列化和调试，没有偏移量信息。
 
 ---
 
@@ -105,38 +100,36 @@ loc_6A21570:              ; jumptable case 217
 
 ### 3.2 0x30 的证据：SpawnActorInLevel (0x92B8C0C)
 
-> [!TIP]
-> IDA 中跳转到 `0x92B8C0C`，按 F5 反编译查看
+IDA 跳转到 `0x92B8C0C`，F5 反编译。
 
 #### 为什么叫 "SpawnActorInLevel"
 
-**命名推理过程**:
+**命名推理**:
 
-1. **发现关键调用**: 这个函数内部调用了 `sub_8D2ED80`
-2. **查 offsets.hpp**:
+1. 函数内部调用 `sub_8D2ED80`
+2. 查 offsets.hpp:
    ```cpp
    // [Source: NotebookLM WriteUp]
    constexpr uintptr_t SpawnProjectile_Func_Offset = 0x8D2ED80;
    ```
-3. **Writeup 标注**: `0x8D2ED80` 是 SpawnProjectile/SpawnActor 函数
-4. **推断**: 调用 SpawnActor 的函数，且传入 Level 参数 → `SpawnActorInLevel`
+3. Writeup 标注 `0x8D2ED80` 是 SpawnProjectile/SpawnActor 函数
+4. 调用 SpawnActor 且传入 Level 参数 → `SpawnActorInLevel`
 
-**Level 参数的关系 (0x30 的由来)**:
-- 在该函数内部 (见下文代码分析)，有一行关键代码：`*(_QWORD *)(a1 + 48)`。
-- `48` (十进制) = `0x30` (十六进制)。
-- 已知 `a1` 是 `UWorld*` (因为它调用了 World 的成员函数)。
-- `UWorld` + `0x30` 正是 `PersistentLevel` (ULevel*)。
-- 该函数将读取到的 `Level` 指针传递给了后续的处理函数 `sub_8D2BBB8` (Level_ProcessActorArray)。
-- **结论**: 这个函数显式地获取了 Level 对象并将 Actor 放入其中，因此命名为 `SpawnActorInLevel`。
+**Level 参数关系（0x30 由来）**:
+- 函数内部关键代码：`*(_QWORD *)(a1 + 48)`
+- `48` (十进制) = `0x30` (十六进制)
+- `a1` 是 `UWorld*`（调用 World 成员函数）
+- `UWorld` + `0x30` = `PersistentLevel` (ULevel*)
+- Level 指针传递给 `sub_8D2BBB8` (Level_ProcessActorArray)
+- 函数获取 Level 对象并将 Actor 放入，命名 `SpawnActorInLevel`
 
 ---
 
 #### Writeup 如何识别 SpawnActor
 
-> [!WARNING]
-> 在 IDA 中分析 `sub_8D2ED80` 没有找到 "SpawnActor" 字符串直接引用
+IDA 分析 `sub_8D2ED80` 没有 "SpawnActor" 字符串直接引用。
 
-**IDA 中找到的证据**:
+**IDA 证据**:
 
 ##### 证据 1: "ActorSpawning" 字符串
 
@@ -437,13 +430,12 @@ for (let offset = 0x80; offset < 0xB0; offset += 8) {
 
 ---
 
-## 4. UE4.27 的 ULevel 结构 (参考)
+## 4. UE4.27 的 ULevel 结构
 
 ```cpp
-// 简化版结构
+// 简化版
 class ULevel : public UObject {
     // UObject 基类 ~0x28 字节
-    
     // ... 其他成员 ...
     
     // +0x98: Actors 数组
@@ -453,12 +445,11 @@ class ULevel : public UObject {
 };
 ```
 
-> [!NOTE]
-> 不同 UE4 版本的偏移量可能不同。这个 0x98 是 **UE4.27 Android ARM64** 上的值
+不同 UE4 版本偏移量可能不同。0x98 是 UE4.27 Android ARM64 上的值。
 
 ---
 
-## 5. 总结：逆向分析工作流
+## 5. 逆向分析工作流
 
 ```mermaid
 graph LR
@@ -473,12 +464,12 @@ graph LR
     I --> J[C++ 实现]
 ```
 
-### 关键认知
+### 关键点
 
-1. **SDK Dump 不是万能的** - 只能获取蓝图暴露的类成员
-2. **引擎核心结构需要逆向** - `UWorld`, `ULevel`, `FName` 等
-3. **版本依赖** - 偏移量随 UE4 版本和编译选项变化
-4. **社区知识** - Writeup 和开源项目是重要资源
+1. SDK Dump 只获取蓝图暴露的类成员
+2. 引擎核心结构需要逆向 - `UWorld`, `ULevel`, `FName`
+3. 偏移量随 UE4 版本和编译选项变化
+4. Writeup 和开源项目是重要资源
 
 ---
 
